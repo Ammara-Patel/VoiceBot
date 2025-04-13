@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AI Voice Assistant</title>
+  <style>
+    body {
+      margin: 0;
+      background-color: #000;
+      font-family: Arial, sans-serif;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      background: linear-gradient(90deg, #00cfff, #0055ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 40px;
+    }
+
+    .circle-container {
+      position: relative;
+      width: 220px;
+      height: 220px;
+      margin-bottom: 40px;
+    }
+
+    .circle {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: radial-gradient(ellipse at center, #000 50%, transparent 70%);
+      box-shadow: 0 0 30px #00cfff, 0 0 50px #0055ff;
+      animation: pulse 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.05); opacity: 0.7; }
+    }
+
+    .listen-button {
+      padding: 12px 28px;
+      border: none;
+      border-radius: 25px;
+      background: linear-gradient(90deg, #00cfff, #0055ff);
+      color: #fff;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-top: 10px;
+    }
+
+    .listen-button:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 20px #00cfff, 0 0 30px #0055ff;
+    }
+
+    .status-text {
+      margin: 20px 0;
+      font-size: 1rem;
+      color: #ccc;
+    }
+
+    #response-text, #conversation-history {
+      max-width: 600px;
+      margin-top: 20px;
+      text-align: left;
+    }
+
+    .history-entry {
+      margin-bottom: 15px;
+      background: #111;
+      padding: 10px 15px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px #0055ff30;
+    }
+
+    .user-input {
+      font-weight: bold;
+      color: #00cfff;
+    }
+
+    .ai-response {
+      margin-top: 5px;
+      color: #ddd;
+    }
+  </style>
+  <link rel="icon" href="data:,">
+</head>
+<body>
+
+  <h1>AI Voice Assistant</h1>
+
+  <div class="circle-container">
+    <div class="circle"></div>
+  </div>
+
+  <button class="listen-button" id="start-record-btn">Talk to Assistant</button>
+  <div class="status-text" id="response-text">Waiting for input...</div>
+
+  <div id="conversation-history"></div>
+
+  <script>
+  const startBtn = document.getElementById("start-record-btn");
+  const responseText = document.getElementById("response-text");
+  const conversationHistory = document.getElementById("conversation-history");
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognition = null;
+
+  if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      console.log("Speech recognition started");
+      responseText.textContent = "Listening...";
+    };
+
+    recognition.onspeechend = () => {
+      console.log("Speech ended");
+      recognition.stop();
+      isListening = false;
+    };
+
+    recognition.onresult = event => {
+      const transcript = event.results[0][0].transcript;
+      console.log("Transcript:", transcript);
+      responseText.textContent = `You said: "${transcript}"`;
+
+      fetch('/process_voice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          user_input: transcript
+        })
+      })
+      .then(response => {
+        if (!response.ok) {
+          responseText.textContent = 'Error processing request (HTTP).';
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        const aiText = data.response;
+        responseText.textContent = `AI: ${aiText}`;
+        updateConversation(data.conversation_history);
+        speakResponse(aiText);  // ✅ Speak the response here
+      })
+      .catch(error => {
+        console.error('Fetch error:', error);
+        responseText.textContent = 'Error processing request (Fetch).';
+      });
+    };
+
+    recognition.onerror = event => {
+      console.error('Speech recognition error:', event.error);
+      responseText.textContent = `Speech recognition error: ${event.error}`;
+      isListening = false;
+    };
+  } else {
+    responseText.textContent = 'Speech recognition not supported in this browser.';
+    startBtn.disabled = true;
+  }
+
+  let isListening = false;
+
+  startBtn.addEventListener('click', () => {
+    if (recognition && !isListening) {
+      try {
+        recognition.start();
+        isListening = true;
+      } catch (error) {
+        console.error('Error starting recognition:', error);
+        responseText.textContent = 'Error starting speech recognition.';
+        isListening = false;
+      }
+    }
+  });
+
+  function updateConversation(history) {
+    conversationHistory.innerHTML = '';
+    history.forEach(entry => {
+      const div = document.createElement('div');
+      div.classList.add('history-entry');
+      div.innerHTML = `<div class="user-input">You: ${entry.user}</div>
+                       <div class="ai-response">AI: ${entry.ai}</div>`;
+      conversationHistory.appendChild(div);
+    });
+  }
+
+  // ✅ Voice output function
+  function speakResponse(text) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    utterance.pitch = 1;
+    utterance.rate = 1;
+    utterance.volume = 1;
+    speechSynthesis.speak(utterance);
+  }
+
+
+  </script>
+</body>
+</html>
